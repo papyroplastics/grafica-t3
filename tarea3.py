@@ -1,11 +1,21 @@
 import pyglet
-from OpenGL.GL import *
+import OpenGL.GL as gl
 import numpy as np
 from numpy.random import rand, randn
 import libs.transformations as tr
 from libs.easy_shaders import FogModelViewProjectionShaderProgram
 import libs.gpu_shape as gp
-from libs.basic_shapes import Shape
+
+
+class Shape:
+    def __init__(self, vertices, indices):
+        self.vertices = vertices
+        self.indices = indices
+
+    def __str__(self):
+        return "vertices: " + str(self.vertices) + "\n"\
+            "indices: " + str(self.indices)
+
 
 input("""CONTROLES:
 WASD y ratón: movimiento de la nave
@@ -24,15 +34,15 @@ win = pyglet.window.Window()
 win.set_exclusive_mouse(True)
 win.set_mouse_visible(False)
 program = FogModelViewProjectionShaderProgram()
-glUseProgram(program.shaderProgram)
-glEnable(GL_DEPTH_TEST)
-glEnable(GL_CULL_FACE)
-glEnable(GL_BLEND)
-glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-glClearColor(0.5, 0.5, 0.8, 1.0)
+gl.glUseProgram(program.shaderProgram)
+gl.glEnable(gl.GL_DEPTH_TEST)
+gl.glEnable(gl.GL_CULL_FACE)
+gl.glEnable(gl.GL_BLEND)
+gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+gl.glClearColor(0.5, 0.5, 0.8, 1.0)
 
 # CARGAR NAVE
-with open("assets\ship_cords.txt", "r") as file:
+with open("assets/ship_cords.txt", "r") as file:
     ship_vert = np.array(file.read().replace("\n"," ").split(" "))
 
 count = len(ship_vert)//6
@@ -279,7 +289,7 @@ class Node:
     def __init__(self):
         self.transform = tr.identity()
         self.children = []
-        self.mode = GL_TRIANGLES
+        self.mode = gl.GL_TRIANGLES
 
     def draw(self, parent_transform = tr.identity()):
         new_transform = parent_transform @ self.transform
@@ -287,7 +297,7 @@ class Node:
             if isinstance(child, Node):
                 child.draw(new_transform)
             else:
-                glUniformMatrix4fv(model_loc, 1, GL_TRUE, new_transform)
+                gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, new_transform)
                 program.drawCall(child, self.mode)
 
     def clear(self):
@@ -299,8 +309,8 @@ class SimplerNode:
         self.transform = tr.identity()
         self.child = None
     def draw(self):
-        glUniformMatrix4fv(model_loc, 1, GL_TRUE, self.transform)
-        program.drawCall(self.child, GL_TRIANGLES)
+        gl.glUniformMatrix4fv(model_loc, 1, gl.GL_TRUE, self.transform)
+        program.drawCall(self.child, gl.GL_TRIANGLES)
     def clear(self):
         self.child.clear()
 
@@ -312,7 +322,7 @@ for i in range(4):
     donuts.append(torusNode)
 
 linesNode = Node()
-linesNode.mode = GL_LINES
+linesNode.mode = gl.GL_LINES
 linesNode.children += [lines]
 
 shipNode = Node()
@@ -329,9 +339,9 @@ scene.children += [shipNode, floorNode, shadowNode] + donuts
 
 
 # SET TRANSFORMS
-model_loc = glGetUniformLocation(program.shaderProgram, "model")
-viewProj_loc = glGetUniformLocation(program.shaderProgram, "viewProj")
-shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
+model_loc = gl.glGetUniformLocation(program.shaderProgram, "model")
+viewProj_loc = gl.glGetUniformLocation(program.shaderProgram, "viewProj")
+shipPos_loc = gl.glGetUniformLocation(program.shaderProgram, "shipPos")
 PERSPECTIVE = tr.perspective(60, win.aspect_ratio, 0.5, 100)
 ORTHOGRAPHIC = tr.ortho(-win.aspect_ratio*4, win.aspect_ratio*4, -4, 4, 0.1, 50)
 
@@ -390,12 +400,12 @@ def updateScenegraph():
 
     if third_person:
         view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
-        glUniformMatrix4fv(viewProj_loc, 1, GL_TRUE, PERSPECTIVE @ view)
+        gl.glUniformMatrix4fv(viewProj_loc, 1, gl.GL_TRUE, PERSPECTIVE @ view)
     else:
         view = tr.lookAt(position * np.array([1,0,1]) + np.array([0,49,0]), position, np.array([0,0,-1]))
-        glUniformMatrix4fv(viewProj_loc, 1, GL_TRUE, ORTHOGRAPHIC @ view)
+        gl.glUniformMatrix4fv(viewProj_loc, 1, gl.GL_TRUE, ORTHOGRAPHIC @ view)
 
-    glUniform3f(shipPos_loc, *position)
+    gl.glUniform3f(shipPos_loc, *position)
     floorNode.transform = tr.translate(6*(position[0]//6), 0, 6*(position[2]//6))
     shadowNode.transform = shadow_matrix @ shipNode.transform
 
@@ -456,6 +466,6 @@ def on_key_release(symbol, mods):
 def on_close():
     scene.clear()
     animation.clear()
-    glDeleteProgram(program.shaderProgram)
+    gl.glDeleteProgram(program.shaderProgram)
 
 pyglet.app.run()

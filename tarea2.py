@@ -122,7 +122,7 @@ def crearVerticesNave():
                 14,15, 15,16, 16,17, 17,18, 18,19, 15,18,
                 24,21, 25,24, 24,23, 23,22, 22,21, 21,20)
     
-    negro = (0.0,) *26
+    negro = (0.0,) * 26 * 3
 
     return (program.vertex_list_indexed(count=26, mode=GL_TRIANGLES, indices=ind_nave,
                                         position=("fn", pos_nave), color = ("fn", color_nave)),
