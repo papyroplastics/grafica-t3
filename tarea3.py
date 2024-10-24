@@ -3,7 +3,7 @@ import OpenGL.GL as gl
 import numpy as np
 from numpy.random import rand, randn
 import libs.transformations as tr
-from libs.easy_shaders import FogModelViewProjectionShaderProgram
+from libs.fog_shader import FogModelViewProjectionShaderProgram
 import libs.gpu_shape as gp
 
 

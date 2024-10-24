@@ -3,12 +3,10 @@
 
 from OpenGL.GL import *
 import OpenGL.GL.shaders
-import numpy as np
-from PIL import Image
 
 from libs.gpu_shape import GPUShape
 
-__author__ = "Daniel Calderon"
+__author__ = "Lucas Llort"
 __license__ = "MIT"
 
 # We will use 32 bits data, so we have 4 bytes
