@@ -69,18 +69,17 @@ for i in range(count**2):
 floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
 
 # HERMITE CURVE
-in_animation = False
-
-class hermite_curve:
+class HermiteCurve:
     def __init__(self):
         self.t = 0.0
         self.n = 0
         self.step = 0.0
-        self.poss = []
-        self.dirs = []
-        self.start_pos = None
-        self.start_dir = None
-        self.positioning = True
+        self.poss = [None]
+        self.dirs = [[None,None]]
+        self.start_dir = np.empty(3)
+        self.next_pos = np.empty(3)
+        self.active = False
+        self.path3D = Node()
         self.hermite_matrix = np.array([[ 2,-2, 1, 1],
                                         [-3, 3,-2,-1],
                                         [ 0, 0, 1, 0],
@@ -88,65 +87,113 @@ class hermite_curve:
 
     def hermite_point(self, pos1, dir1, pos2, dir2):
         pos_matrix = np.vstack([pos1, pos2, dir1, dir2])
+
         t_arr = np.array([self.t**3, self.t**2, self.t, 1], dtype=np.float32)
+
         return t_arr @ self.hermite_matrix @ pos_matrix
     
     def start(self, pos, dir):
         if len(self.poss) > 1:
-            global in_animation
-            in_animation = True
-            self.start_pos = pos
-            self.start_dir = dir
-            difference = self.poss[0] - pos
-            self.step = 1 / (60 * max(difference))
-            self.positioning = True
+            self.active = True
+            difference = np.linalg.norm(self.poss[1] - pos)
+            factor = np.log(difference)
+            if difference > 3: 
+                self.step = 1 / (40 * factor)
+                self.dirs[0][1] = dir * 5 * factor
+                self.dirs[1][0] = self.start_dir * 5 * factor
+            else:
+                self.step = 1/20
+                self.dirs[0][1] = dir
+                self.dirs[1][0] = self.start_dir
+            self.poss[0] = pos
+            self.next_pos = self.next_curve_position()
 
     def end(self):
-        global in_animation
-        in_animation = False
-        self.start_pos = None
-        self.start_dir = None
+        self.active = False
         self.t = 0.0
         self.n = 0
+        
+        global phi, theta
+        final_dir = self.dirs[-1][1]
+        phi = np.arcsin(final_dir[1]/np.linalg.norm(final_dir))
+        if final_dir[2] == 0:
+            theta = -(np.pi/2)*(final_dir[0]/abs(final_dir[0]))
+        else:
+            theta = np.arctan(final_dir[0]/final_dir[2])
+            if final_dir[2] > 0:
+                theta += np.pi
 
-    def curve_anim(self):
+    def next_curve_position(self):
+        self.t += self.step
+
         if self.t >= 1:
             self.t -= 1
             self.n += 1
-            if self.n == len(self.poss)-2:
+            if self.n == len(self.poss)-1:
                 self.end()
                 return self.poss[-1]
             else:
-                difference = self.poss[self.n+1] - self.poss[self.n]
-                self.step = 1 / (60 * max(difference))
-        
-        self.t += self.step
-        return self.hermite_point(self.poss[self.n], self.poss[self.n+1], self.dirs[self.n], self.dirs[self.n+1])
+                difference = np.linalg.norm(self.poss[self.n+1] - self.poss[self.n])
+                if difference > 2:
+                    self.step = 1 / (40 * np.log(difference))
+                else:
+                    self.step = 1/20
+                
+        return self.hermite_point(self.poss[self.n], self.dirs[self.n][1], self.poss[self.n+1], self.dirs[self.n+1][0])
 
-    def get_in_position_anim(self):
-        if self.t >= 1:
-            self.t = 0
-            self.positioning = False
-            return self.poss[0]
+    def update_pos(self):
+        newPos = np.array(self.next_pos)
+        self.next_pos = self.next_curve_position()
 
-        self.t += self.step
-        return self.hermite_point(self.start_pos, self.poss[0], self.start_pos, self.dirs[0])
+        newDir = self.next_pos - newPos
+        newDir = newDir / np.linalg.norm(newDir)
 
-    def position_update(self):
-        if self.positioning:
-            return self.get_in_position_anim()
+        return newPos, newDir
+    
+    def new_point(self, pos, dir):
+        if len(self.poss) == 1:
+            self.start_dir = np.array(dir)
+            self.dirs += [[np.array(dir),np.array(dir)]]
         else:
-            return self.curve_anim(self)
+            norm = np.linalg.norm(pos - self.poss[-1])
+            if norm > 2:
+                self.dirs += [[np.array(dir),np.array(dir)]]
+                self.dirs[-1][0] *= 7 * np.log(norm)
+                self.dirs[-2][1] *= 7 * np.log(norm)
+            elif norm > 0.5:
+                self.dirs += [[np.array(dir),np.array(dir)]]
+            else:
+                return
+        self.poss += [np.array(pos)]
+        self.path3D.children.append(create_checkpoint(pos, dir))
 
-# SET TRANSFORMS
-view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
-projection = tr.perspective(60, win.aspect_ratio, 0.5, 100)
-model_loc = glGetUniformLocation(program.shaderProgram, "model")
-view_loc = glGetUniformLocation(program.shaderProgram, "view")
-proj_loc = glGetUniformLocation(program.shaderProgram, "projection")
-shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
-glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
-glUniformMatrix4fv(proj_loc, 1, GL_TRUE, projection)
+
+def create_checkpoint(pos, dir):
+    vertices = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
+                        -0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
+                        -0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
+                         0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
+                         0.0, 0.0,-0.25, 0.4, 0.4, 0.8], dtype=np.float32)
+
+    indices = np.array([0,1,2, 0,2,3, 0,4,1, 1,4,2, 2,4,3, 3,4,0])
+    gpushape = gp.createGPUShape(program, Shape(vertices, indices))
+
+    s2 = dir[1]
+    c2 = np.sqrt(1-s2**2)
+    s = -dir[0] / c2
+    c = -dir[2] / c2
+
+    node = Node()
+    node.children += [gpushape]
+    node.transform = tr.translate(*pos) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
+    return node
+
+sphere_vertices = []
+cosines = [np.cos(np.pi*i/4) for i in range(8)]
+sines = [np.cos(np.pi*i/4) for i in range(8)]
+
+def create_midpoint(pos):
+    vertices = []
 
 # CREATE SCENEGRAPH
 class Node:
@@ -164,6 +211,7 @@ class Node:
                 glUniformMatrix4fv(model_loc, 1, GL_TRUE, new_transform)
                 program.drawCall(child, self.mode)
 
+
 linesNode = Node()
 linesNode.mode = GL_LINES
 linesNode.children += [lines]
@@ -177,6 +225,16 @@ floorNode.children += [floor]
 scene = Node()
 scene.children += [shipNode, floorNode]
 
+# SET TRANSFORMS
+view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
+projection = tr.perspective(60, win.aspect_ratio, 0.5, 100)
+model_loc = glGetUniformLocation(program.shaderProgram, "model")
+view_loc = glGetUniformLocation(program.shaderProgram, "view")
+proj_loc = glGetUniformLocation(program.shaderProgram, "projection")
+shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
+glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
+glUniformMatrix4fv(proj_loc, 1, GL_TRUE, projection)
+
 # Programa :D
 theta = 0.0
 phi = 0.0
@@ -184,38 +242,46 @@ rotate_left = False
 rotate_right = False
 forward = False
 backward = False
+visible_path = False
 position = np.array([0, 2, 0], dtype=np.float32)
+direction = np.array([0, 0, -1], dtype=np.float32)
+animation = HermiteCurve()
 
 def updateScenegraph():
-    global theta, position
-    if rotate_left:
-        theta += 0.05
-    if rotate_right:
-        theta -= 0.05
+    global theta, position, direction
+    if animation.active:
+        position, direction = animation.update_pos()
+        s2 = direction[1]
+        c2 = np.sqrt(1-s2**2)
+        s = -direction[0] / c2
+        c = -direction[2] / c2
 
-    s = sin(theta)
-    c = cos(theta)
-    s2 = sin(phi)
-    c2 = cos(phi)
+    else:
+        if rotate_left:
+            theta += 0.05
+        if rotate_right:
+            theta -= 0.05
 
-    direction = np.array((-s*c2,s2,-c*c2))
+        s = sin(theta)
+        c = cos(theta)
+        s2 = sin(phi)
+        c2 = cos(phi)
 
-    if forward:
-        if position[1]<=1 and phi<0:
-            direction[1] = 0
-        position += direction * 0.08
+        direction = np.array((-s*c2,s2,-c*c2))
 
-    elif backward:
-        if position[1]<=1 and phi>0:
-            direction[1] = 0
-        position -= direction * 0.08
+        if forward:
+            if position[1]<=1 and phi<0:
+                direction[1] = 0
+            position += direction * 0.08
+
+        elif backward:
+            if position[1]<=1 and phi>0:
+                direction[1] = 0
+            position -= direction * 0.08
 
     glUniform3f(shipPos_loc, *position)
     shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
     floorNode.transform = tr.translate(6*(position[0]//6), 0, 6*(position[2]//6))
-
-def updateAnimation():
-    pass
 
 @win.event
 def on_draw():
@@ -223,22 +289,22 @@ def on_draw():
     glClear(GL_DEPTH_BUFFER_BIT)
     glUseProgram(program.shaderProgram)
     scene.draw()
+    if visible_path:
+        animation.path3D.draw()
     updateScenegraph()
     
 @win.event
 def on_mouse_motion(x, y, dx, dy):
     global phi
-    if in_animation:
-        pass
-    elif dy > 0.0 and phi < 0.785:
-        phi += dy/600
-    elif dy < 0.0 and phi > -0.785:
-        phi += dy/600
+    if not animation.active:
+        if dy > 0.0 and phi < 0.785:
+            phi += dy/600
+        elif dy < 0.0 and phi > -0.785:
+            phi += dy/600
 
 @win.event
 def on_key_press(symbol, mods):
-    global rotate_left, rotate_right, forward, backward
-
+    global rotate_left, rotate_right, forward, backward, visible_path
     if symbol == pyglet.window.key.A:
         rotate_left = True
     elif symbol == pyglet.window.key.D:
@@ -247,6 +313,12 @@ def on_key_press(symbol, mods):
         forward = True
     elif symbol == pyglet.window.key.S:
         backward = True
+    elif symbol == pyglet.window.key.R and not animation.active:
+        animation.new_point(position, direction)
+    elif symbol == pyglet.window.key._1 and not animation.active:
+        animation.start(position, direction)
+    elif symbol == pyglet.window.key.V:
+        visible_path = not visible_path
     elif symbol == pyglet.window.key.ESCAPE:
         win.close()
 
