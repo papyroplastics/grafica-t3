@@ -1,7 +1,7 @@
 import pyglet
 from OpenGL.GL import *
 import numpy as np
-from math import cos, sin
+from numpy.random import rand, randn
 import libs.transformations as tr
 from libs.easy_shaders import FogModelViewProjectionShaderProgram
 import libs.gpu_shape as gp
@@ -41,7 +41,13 @@ lines_ind = (0,1, 1,2, 2,3, 3,0, 4,0, 4,1, 4,2, 4,3, 5,0,5,1, 5,2, 5,3,
             24,21, 25,24, 24,23, 23,22, 22,21, 21,20) 
 
 ship = gp.createGPUShape(program, Shape(ship_vert, ship_ind))
+shadow = gp.createGPUShape(program, Shape(dark_vert, ship_ind))
 lines =  gp.createGPUShape(program, Shape(dark_vert, lines_ind))
+
+shadow_matrix = np.array([[1.05, 0.0, 0.0, 0.0],
+                          [0.0, 0.0, 0.0, 0.0],
+                          [0.0, 0.1, 1.0, 0.0],
+                          [0.0, 0.0, 0.0, 0.0]], dtype=np.float32)
 
 # CREAR SUELO
 length = 72
@@ -53,7 +59,7 @@ for x in range(count):
     for z in range(count):
         for u in range(2):
             for v in range(2):
-                floor_vert += ((x+u)*box_len-length, 0, (z+v)*box_len-length)
+                floor_vert += ((x+u)*box_len-length, -0.1, (z+v)*box_len-length)
                 if color:
                     floor_vert += (0.43, 0.73, 0.43)
                 else:
@@ -67,6 +73,30 @@ for i in range(count**2):
     floor_ind += (j, j+1, j+2, j+1, j+3, j+2)
 
 floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
+
+# OBJETOS
+cosines = [np.cos(2*np.pi*i/24) for i in range(24)]
+sines = [np.sin(2*np.pi*i/24) for i in range(24)]
+def create_torus(r1, r2, c1, c2):
+    print(r1, r2, c1, c2)
+    vertices = []
+    for i in range(24):
+        c = 0.0
+        for j in range(24):
+            vertices += [(r1+r2*cosines[j])*cosines[i], r2*sines[j], (r1+r2*cosines[j])*sines[i]]
+            vertices += [c1[0,i]*c + c2[0,i]*(1-c) for i in range(3)]
+            if j >=12:
+                c -= 0.08
+            else:
+                c += 0.08
+
+    indices = []
+    for i in range(576):
+        j = (i+24)%576
+        k = (i+1)%576
+        indices += [i, k, j, j, k, (i+25)%576]
+
+    return gp.createGPUShape(program, Shape(vertices, indices))
 
 # BATTLE ROLL
 class BattleRoll:
@@ -185,11 +215,14 @@ class HermiteCurve:
         self.poss += [np.array(pos)]
         self.path3D.children.append(create_checkpoint(pos, dir))
 
+    def clear(self):
+        self.path3D.clear()
+
 pyramid_vertices = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
-                    -0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
-                    -0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
-                        0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
-                        0.0, 0.0,-0.25, 0.4, 0.4, 0.8], dtype=np.float32)
+                            -0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
+                            -0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
+                             0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
+                             0.0, 0.0,-0.25, 0.4, 0.4, 0.8], dtype=np.float32)
 pyramid_indices = np.array([0,1,2, 0,2,3, 0,4,1, 1,4,2, 2,4,3, 3,4,0])
 pyramid_gpushape = gp.createGPUShape(program, Shape(pyramid_vertices, pyramid_indices))
 
@@ -226,7 +259,6 @@ def create_midpoint(pos):
     node.transform = tr.translate(*pos)
     return node
 
-
 # CREATE SCENEGRAPH
 class Node:
     def __init__(self):
@@ -243,6 +275,17 @@ class Node:
                 glUniformMatrix4fv(model_loc, 1, GL_TRUE, new_transform)
                 program.drawCall(child, self.mode)
 
+    def clear(self):
+        for child in self.children:
+            child.clear()
+
+donuts = []
+for i in range(5):
+    torusNode = Node()
+    torusNode.children += [create_torus(2.5+rand()*2, 0.3+rand()*2, rand(1,3), rand(1,3))]
+    torusNode.transform = tr.translate(40*rand()-20,20*rand()+6,40*rand()-20)@tr.rotationY(2*np.pi*(rand()))@tr.rotationX(np.pi*(0.5+0.5*randn()))
+    donuts.append(torusNode)
+
 linesNode = Node()
 linesNode.mode = GL_LINES
 linesNode.children += [lines]
@@ -253,18 +296,21 @@ shipNode.children += [ship, linesNode]
 floorNode = Node()
 floorNode.children += [floor]
 
+shadowNode = Node()
+shadowNode.children += [shadow]
+
 scene = Node()
-scene.children += [shipNode, floorNode]
+scene.children += [shipNode, floorNode, shadowNode] + donuts
 
 # SET TRANSFORMS
-view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
-projection = tr.perspective(60, win.aspect_ratio, 0.5, 100)
 model_loc = glGetUniformLocation(program.shaderProgram, "model")
 view_loc = glGetUniformLocation(program.shaderProgram, "view")
 proj_loc = glGetUniformLocation(program.shaderProgram, "projection")
 shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
-glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
-glUniformMatrix4fv(proj_loc, 1, GL_TRUE, projection)
+PERSPECTIVE = tr.perspective(60, win.aspect_ratio, 0.5, 100)
+ORTHOGRAPHIC = tr.ortho(-win.aspect_ratio*4, win.aspect_ratio*4, -4, 4, 0.1, 50)
+glUniformMatrix4fv(view_loc, 1, GL_TRUE, tr.lookAt(np.array([0,49,0]), np.array([0, 6, 0]), np.array([0,0,-1])))
+glUniformMatrix4fv(proj_loc, 1, GL_TRUE, PERSPECTIVE)
 
 # Programa :D
 theta = 0.0
@@ -273,7 +319,8 @@ rotate_left = False
 rotate_right = False
 forward = False
 backward = False
-visible_path = False
+visible_path = True
+third_person = True
 position = np.array([0, 6, 0], dtype=np.float32)
 direction = np.array([0, 0, -1], dtype=np.float32)
 animation = HermiteCurve()
@@ -287,7 +334,6 @@ def updateScenegraph():
         c2 = np.sqrt(1-s2**2)
         s = -direction[0] / c2
         c = -direction[2] / c2
-        view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
 
     else:
         if rotate_left:
@@ -295,32 +341,39 @@ def updateScenegraph():
         if rotate_right:
             theta -= 0.05
 
-        s = sin(theta)
-        c = cos(theta)
-        s2 = sin(phi)
-        c2 = cos(phi)
+        s = np.sin(theta)
+        c = np.cos(theta)
+        s2 = np.sin(phi)
+        c2 = np.cos(phi)
 
         direction = np.array((-s*c2,s2,-c*c2))
-        view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
 
         if forward:
             if position[1]<=4 and phi<0:
-                direction[1] = 0
-            position += direction * 0.08
+                position += direction * np.array([0.08, 0.0, 0.08])
+            else:
+                position += direction * 0.08
 
         elif backward:
             if position[1]<=4 and phi>0:
-                direction[1] = 0
-            position -= direction * 0.08
+                position -= direction * np.array([0.08, 0.0, 0.08])
+            else:
+                position -= direction * 0.08
 
     if roll.active:
         shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2) @ roll.transform()
     else:
         shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
 
+    if third_person:
+        view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
+    else:
+        view = tr.lookAt(position * np.array([1,0,1]) + np.array([0,49,0]), position, np.array([0,0,-1]))
+
     glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
     glUniform3f(shipPos_loc, *position)
     floorNode.transform = tr.translate(6*(position[0]//6), 0, 6*(position[2]//6))
+    shadowNode.transform = shadow_matrix @ shipNode.transform
 
 @win.event
 def on_draw():
@@ -341,7 +394,7 @@ def on_mouse_motion(x, y, dx, dy):
 
 @win.event
 def on_key_press(symbol, mods):
-    global rotate_left, rotate_right, forward, backward, visible_path
+    global rotate_left, rotate_right, forward, backward, visible_path, third_person
     if symbol == pyglet.window.key.A:
         rotate_left = True
     elif symbol == pyglet.window.key.D:
@@ -358,6 +411,12 @@ def on_key_press(symbol, mods):
         visible_path = not visible_path
     elif symbol == pyglet.window.key.P and not roll.active:
         roll.active = True
+    elif symbol == pyglet.window.key.C:
+        if third_person:
+            glUniformMatrix4fv(proj_loc, 1, GL_TRUE, ORTHOGRAPHIC)
+        else:
+            glUniformMatrix4fv(proj_loc, 1, GL_TRUE, PERSPECTIVE)
+        third_person = not third_person
     elif symbol == pyglet.window.key.ESCAPE:
         win.close()
 
@@ -375,9 +434,16 @@ def on_key_release(symbol, mods):
 
 @win.event
 def on_close():
-    ship.clear()
-    lines.clear()
-    floor.clear()
+    scene.clear()
+    animation.clear()
     glDeleteProgram(program.shaderProgram)
+
+print("""CONTROLES:
+WASD y ratón: movimiento de la nave
+R: Grabación de puntos de control
+V: Activar/desactivar visualización del recorrido
+1: Seguir recorrido
+P: DO A BARREL ROLL
+C: Cambio de camara""")
 
 pyglet.app.run()
