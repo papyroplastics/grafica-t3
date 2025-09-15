@@ -69,16 +69,74 @@ for i in range(count**2):
 floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
 
 # HERMITE CURVE
-hermite_matrix = np.array([[ 2,-2, 1, 1],
-                           [-3, 3,-2,-1],
-                           [ 0, 0, 1, 0],
-                           [ 1, 0, 0, 0]])
+in_animation = False
 
-def hermite_point(t, pos1, pos2, dir1, dir2):
-    pos_matrix = np.vstack([pos1, dir1, pos2, dir2])
-    t_arr = np.array([t**3, t**2, t, 1], dtype=np.float32)
-    return t_arr @ hermite_matrix @ pos_matrix
+class hermite_curve:
+    def __init__(self):
+        self.t = 0.0
+        self.n = 0
+        self.step = 0.0
+        self.poss = []
+        self.dirs = []
+        self.start_pos = None
+        self.start_dir = None
+        self.positioning = True
+        self.hermite_matrix = np.array([[ 2,-2, 1, 1],
+                                        [-3, 3,-2,-1],
+                                        [ 0, 0, 1, 0],
+                                        [ 1, 0, 0, 0]])
 
+    def hermite_point(self, pos1, dir1, pos2, dir2):
+        pos_matrix = np.vstack([pos1, pos2, dir1, dir2])
+        t_arr = np.array([self.t**3, self.t**2, self.t, 1], dtype=np.float32)
+        return t_arr @ self.hermite_matrix @ pos_matrix
+    
+    def start(self, pos, dir):
+        if len(self.poss) > 1:
+            global in_animation
+            in_animation = True
+            self.start_pos = pos
+            self.start_dir = dir
+            difference = self.poss[0] - pos
+            self.step = 1 / (60 * max(difference))
+            self.positioning = True
+
+    def end(self):
+        global in_animation
+        in_animation = False
+        self.start_pos = None
+        self.start_dir = None
+        self.t = 0.0
+        self.n = 0
+
+    def curve_anim(self):
+        if self.t >= 1:
+            self.t -= 1
+            self.n += 1
+            if self.n == len(self.poss)-2:
+                self.end()
+                return self.poss[-1]
+            else:
+                difference = self.poss[self.n+1] - self.poss[self.n]
+                self.step = 1 / (60 * max(difference))
+        
+        self.t += self.step
+        return self.hermite_point(self.poss[self.n], self.poss[self.n+1], self.dirs[self.n], self.dirs[self.n+1])
+
+    def get_in_position_anim(self):
+        if self.t >= 1:
+            self.t = 0
+            self.positioning = False
+            return self.poss[0]
+
+        self.t += self.step
+        return self.hermite_point(self.start_pos, self.poss[0], self.start_pos, self.dirs[0])
+
+    def position_update(self):
+        if self.positioning:
+            return self.get_in_position_anim()
+        else:
+            return self.curve_anim(self)
 
 # SET TRANSFORMS
 view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
@@ -126,7 +184,6 @@ rotate_left = False
 rotate_right = False
 forward = False
 backward = False
-in_anim = False
 position = np.array([0, 2, 0], dtype=np.float32)
 
 def updateScenegraph():
@@ -171,7 +228,7 @@ def on_draw():
 @win.event
 def on_mouse_motion(x, y, dx, dy):
     global phi
-    if in_anim:
+    if in_animation:
         pass
     elif dy > 0.0 and phi < 0.785:
         phi += dy/600
@@ -181,6 +238,7 @@ def on_mouse_motion(x, y, dx, dy):
 @win.event
 def on_key_press(symbol, mods):
     global rotate_left, rotate_right, forward, backward
+
     if symbol == pyglet.window.key.A:
         rotate_left = True
     elif symbol == pyglet.window.key.D:
