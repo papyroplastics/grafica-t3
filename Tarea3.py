@@ -11,7 +11,7 @@ from libs.basic_shapes import Shape
 win = pyglet.window.Window()
 win.set_exclusive_mouse(True)
 win.set_mouse_visible(False)
-program = sh.FogViewProjectionShaderProgram()
+program = sh.FogModelViewProjectionShaderProgram()
 glUseProgram(program.shaderProgram)
 glEnable(GL_DEPTH_TEST)
 glEnable(GL_CULL_FACE)
@@ -68,9 +68,6 @@ for i in range(count**2):
 
 floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
 
-def ad_infinitum(pos):
-    return tr.translate(5*(pos[0]//5), 0, 5*(pos[2]//5))
-
 # SET TRANSFORMS
 view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
 ratio = win.aspect_ratio
@@ -80,6 +77,35 @@ glUniformMatrix4fv(glGetUniformLocation(program.shaderProgram, "projection"), 1,
 model_loc = glGetUniformLocation(program.shaderProgram, "model")
 shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
 
+# CREATE SCENEGRAPH
+class Node:
+    def __init__(self):
+        self.transform = tr.identity()
+        self.children = []
+        self.mode = GL_TRIANGLES
+
+    def draw(self, parent_transform = tr.identity()):
+        new_transform = parent_transform @ self.transform
+        for child in self.children:
+            if isinstance(child, Node):
+                child.draw(new_transform)
+            else:
+                glUniformMatrix4fv(model_loc, 1, GL_TRUE, new_transform)
+                program.drawCall(child, self.mode)
+
+linesNode = Node()
+linesNode.mode = GL_LINES
+linesNode.children += [lines]
+
+shipNode = Node()
+shipNode.children += [ship, linesNode]
+
+floorNode = Node()
+floorNode.children += [floor]
+
+scene = Node()
+scene.children += [shipNode, floorNode]
+
 theta = 0.0
 phi = 0.0
 rotate_left = False
@@ -88,26 +114,17 @@ forward = False
 backward = False
 position = np.array([0, 2, 0], dtype=np.float32)
 
-@win.event
-def on_draw():
+def updateScenegraph():
     global theta, position
-    glClear(GL_COLOR_BUFFER_BIT)
-    glClear(GL_DEPTH_BUFFER_BIT)
-    glUseProgram(program.shaderProgram)
-    program.drawCall(ship, GL_TRIANGLES)
-    program.drawCall(lines, GL_LINES)
-    glUniformMatrix4fv(model_loc, 1, GL_TRUE, ad_infinitum(position))
-    program.drawCall(floor, GL_TRIANGLES)
-
     if rotate_left:
         theta += 0.05
     if rotate_right:
         theta -= 0.05
 
-    c = cos(theta)
     s = sin(theta)
-    c2 = cos(phi)
+    c = cos(theta)
     s2 = sin(phi)
+    c2 = cos(phi)
 
     direction = np.array((-s*c2,s2,-c*c2))
 
@@ -121,9 +138,17 @@ def on_draw():
             direction[1] = 0
         position -= direction * 0.05
 
-    model = tr.translate(*position) @ tr.rotationY(theta) @ tr.rotationX(phi)
-    glUniformMatrix4fv(model_loc, 1, GL_TRUE, model)
     glUniform3f(shipPos_loc, *position)
+    shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
+    floorNode.transform = tr.translate(5*(position[0]//5), 0, 5*(position[2]//5))
+
+@win.event
+def on_draw():
+    glClear(GL_COLOR_BUFFER_BIT)
+    glClear(GL_DEPTH_BUFFER_BIT)
+    glUseProgram(program.shaderProgram)
+    scene.draw()
+    updateScenegraph()
     
 @win.event
 def on_mouse_motion(x, y, dx, dy):

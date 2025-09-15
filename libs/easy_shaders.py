@@ -496,7 +496,7 @@ class SimpleTextureModelViewProjectionShaderProgram:
         glBindVertexArray(0)
 
 
-class FogViewProjectionShaderProgram: # Shader de neblina
+class FogModelViewProjectionShaderProgram: # Shader de neblina
 
     def __init__(self):
 
@@ -530,7 +530,7 @@ class FogViewProjectionShaderProgram: # Shader de neblina
             out vec4 outColor;
             void main()
             {
-                float alpha = max(1 - (abs(shipPos.x - fragPos.x) + abs(shipPos.z - fragPos.z) + 0.1)/40, 0);
+                float alpha = max(1 - 0.02 * (abs(shipPos.x - fragPos.x) + abs(shipPos.z - fragPos.z) + 0.1), 0);
                 outColor = vec4(newColor, alpha);
             }
             """
