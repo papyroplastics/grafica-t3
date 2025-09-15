@@ -70,12 +70,13 @@ floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
 
 # SET TRANSFORMS
 view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
-ratio = win.aspect_ratio
-projection = tr.perspective(60, ratio, 0.5, 100)
-glUniformMatrix4fv(glGetUniformLocation(program.shaderProgram, "view"), 1, GL_TRUE, view)
-glUniformMatrix4fv(glGetUniformLocation(program.shaderProgram, "projection"), 1, GL_TRUE, projection)
+projection = tr.perspective(60, win.aspect_ratio, 0.5, 100)
 model_loc = glGetUniformLocation(program.shaderProgram, "model")
+view_loc = glGetUniformLocation(program.shaderProgram, "view")
+proj_loc = glGetUniformLocation(program.shaderProgram, "projection")
 shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
+glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
+glUniformMatrix4fv(proj_loc, 1, GL_TRUE, projection)
 
 # CREATE SCENEGRAPH
 class Node:
@@ -106,6 +107,7 @@ floorNode.children += [floor]
 scene = Node()
 scene.children += [shipNode, floorNode]
 
+# Programa :D
 theta = 0.0
 phi = 0.0
 rotate_left = False
@@ -131,12 +133,14 @@ def updateScenegraph():
     if forward:
         if position[1]<=1 and phi<0:
             direction[1] = 0
-        position += direction * 0.05   # pasar todo esto a una funcion update()
+        position += direction * 0.08
 
     elif backward:
         if position[1]<=1 and phi>0:
             direction[1] = 0
-        position -= direction * 0.05
+        position -= direction * 0.08
+
+
 
     glUniform3f(shipPos_loc, *position)
     shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
