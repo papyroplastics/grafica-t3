@@ -186,12 +186,26 @@ def create_checkpoint(pos, dir):
     node.transform = tr.translate(*pos) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
     return node
 
-sphere_vertices = []
-cosines = [np.cos(np.pi*i/4) for i in range(8)]
-sines = [np.cos(np.pi*i/4) for i in range(8)]
+sphere_vertices = [0.0, 0.1, 0.0, 0.3, 0.3, 0.8]
+heights = [np.sqrt(2)*0.05, 0, -np.sqrt(2)*0.05]
+for h in heights:
+    for i in range(8):
+        sphere_vertices += [np.sin(np.pi*i/4)*h, h, np.cos(np.pi*i/4)*h, 0.3, 0.3, 0.8]
+sphere_vertices += [0.0,-0.1, 0.0, 0.3, 0.3, 0.8]
+sphere_vertices = np.array(sphere_vertices)
 
+sphrere_indices = []
+for i in range(1,9):
+    sphrere_indices += [0,i,(i)%8+1]
+sphrere_indices = np.array(sphrere_indices)
+
+sphrere_gpushape = gp.createGPUShape(program, Shape(sphere_vertices, sphrere_indices))
 def create_midpoint(pos):
-    vertices = []
+    node = Node()
+    node.children += [sphrere_gpushape]
+    node.transform = tr.translate(*pos)
+    return node
+
 
 # CREATE SCENEGRAPH
 class Node:
@@ -221,7 +235,7 @@ floorNode = Node()
 floorNode.children += [floor]
 
 scene = Node()
-scene.children += [shipNode, floorNode]
+scene.children += [shipNode, floorNode, create_midpoint((0,1,0))]
 
 # SET TRANSFORMS
 view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
