@@ -3,7 +3,7 @@ from OpenGL.GL import *
 import numpy as np
 from math import cos, sin
 import libs.transformations as tr
-import libs.easy_shaders as sh
+from libs.easy_shaders import FogModelViewProjectionShaderProgram
 import libs.gpu_shape as gp
 from libs.basic_shapes import Shape
 
@@ -11,7 +11,7 @@ from libs.basic_shapes import Shape
 win = pyglet.window.Window()
 win.set_exclusive_mouse(True)
 win.set_mouse_visible(False)
-program = sh.FogModelViewProjectionShaderProgram()
+program = FogModelViewProjectionShaderProgram()
 glUseProgram(program.shaderProgram)
 glEnable(GL_DEPTH_TEST)
 glEnable(GL_CULL_FACE)
@@ -68,6 +68,23 @@ for i in range(count**2):
 
 floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
 
+# BATTLE ROLL
+class BattleRoll:
+    def __init__(self):
+        self.t = 0.0
+        self.active = False
+        self.step = 1/90
+    
+    def transform(self):
+        if self.t >= 1:
+            self.active = False
+            self.t = 0
+            return tr.identity()
+        else:
+            angle = 0.8*self.t + 0.1*(1-np.cos(np.pi*self.t)) - 0.2*np.sin(2*np.pi*self.t)
+            self.t += self.step
+            return tr.rotationZ(2*np.pi*angle)
+
 # HERMITE CURVE
 class HermiteCurve:
     def __init__(self):
@@ -85,11 +102,9 @@ class HermiteCurve:
                                         [ 0, 0, 1, 0],
                                         [ 1, 0, 0, 0]])
 
-    def hermite_point(self, pos1, dir1, pos2, dir2):
+    def hermite_point(self, t, pos1, dir1, pos2, dir2):
         pos_matrix = np.vstack([pos1, pos2, dir1, dir2])
-
-        t_arr = np.array([self.t**3, self.t**2, self.t, 1], dtype=np.float32)
-
+        t_arr = np.array([t**3, t**2, t, 1], dtype=np.float32)
         return t_arr @ self.hermite_matrix @ pos_matrix
     
     def start(self, pos, dir):
@@ -139,7 +154,7 @@ class HermiteCurve:
                 else:
                     self.step = 1/20
                 
-        return self.hermite_point(self.poss[self.n], self.dirs[self.n][1], self.poss[self.n+1], self.dirs[self.n+1][0])
+        return self.hermite_point(self.t, self.poss[self.n], self.dirs[self.n][1], self.poss[self.n+1], self.dirs[self.n+1][0])
 
     def update_pos(self):
         newPos = np.array(self.next_pos)
@@ -158,8 +173,11 @@ class HermiteCurve:
             norm = np.linalg.norm(pos - self.poss[-1])
             if norm > 2:
                 self.dirs += [[np.array(dir),np.array(dir)]]
-                self.dirs[-1][0] *= 7 * np.log(norm)
-                self.dirs[-2][1] *= 7 * np.log(norm)
+                log = 7 * np.log(norm)
+                self.dirs[-1][0] *= log
+                self.dirs[-2][1] *= log
+                for t in range(int(log)):
+                    self.path3D.children += [create_midpoint(self.hermite_point(t/int(log),self.poss[-1],self.dirs[-2][1],pos,self.dirs[-1][0]))]
             elif norm > 0.5:
                 self.dirs += [[np.array(dir),np.array(dir)]]
             else:
@@ -186,20 +204,22 @@ def create_checkpoint(pos, dir):
     node.transform = tr.translate(*pos) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
     return node
 
-sphere_vertices = [0.0, 0.1, 0.0, 0.3, 0.3, 0.8]
-heights = [np.sqrt(2)*0.05, 0, -np.sqrt(2)*0.05]
-for h in heights:
+sphere_vertices = [0, 1, 0, 3, 3, 8]
+angles = [np.pi/4,0,-np.pi/4]
+for a in angles:
     for i in range(8):
-        sphere_vertices += [np.sin(np.pi*i/4)*h, h, np.cos(np.pi*i/4)*h, 0.3, 0.3, 0.8]
-sphere_vertices += [0.0,-0.1, 0.0, 0.3, 0.3, 0.8]
-sphere_vertices = np.array(sphere_vertices)
+        sphere_vertices += [np.sin(np.pi*i/4)*np.cos(a), np.sin(a), np.cos(np.pi*i/4)*np.cos(a), 3, 3, 8]
+sphere_vertices += [0,-1, 0, 3, 3, 8]
+sphere_vertices = np.array(sphere_vertices, dtype=np.float32) * 0.1
 
 sphrere_indices = []
 for i in range(1,9):
-    sphrere_indices += [0,i,(i)%8+1]
+    sphrere_indices += [0,i,i%8+1, i,8+i,i%8+9, i,i%8+9,i%8+1]
 sphrere_indices = np.array(sphrere_indices)
-
+inverted = np.ones(len(sphrere_indices))*26-(np.array(sphrere_indices)+np.ones(len(sphrere_indices)))
+sphrere_indices = np.hstack((sphrere_indices, inverted))
 sphrere_gpushape = gp.createGPUShape(program, Shape(sphere_vertices, sphrere_indices))
+
 def create_midpoint(pos):
     node = Node()
     node.children += [sphrere_gpushape]
@@ -223,7 +243,6 @@ class Node:
                 glUniformMatrix4fv(model_loc, 1, GL_TRUE, new_transform)
                 program.drawCall(child, self.mode)
 
-
 linesNode = Node()
 linesNode.mode = GL_LINES
 linesNode.children += [lines]
@@ -235,7 +254,7 @@ floorNode = Node()
 floorNode.children += [floor]
 
 scene = Node()
-scene.children += [shipNode, floorNode, create_midpoint((0,1,0))]
+scene.children += [shipNode, floorNode]
 
 # SET TRANSFORMS
 view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
@@ -255,9 +274,10 @@ rotate_right = False
 forward = False
 backward = False
 visible_path = False
-position = np.array([0, 2, 0], dtype=np.float32)
+position = np.array([0, 6, 0], dtype=np.float32)
 direction = np.array([0, 0, -1], dtype=np.float32)
 animation = HermiteCurve()
+roll = BattleRoll()
 
 def updateScenegraph():
     global theta, position, direction
@@ -267,6 +287,7 @@ def updateScenegraph():
         c2 = np.sqrt(1-s2**2)
         s = -direction[0] / c2
         c = -direction[2] / c2
+        view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
 
     else:
         if rotate_left:
@@ -280,26 +301,30 @@ def updateScenegraph():
         c2 = cos(phi)
 
         direction = np.array((-s*c2,s2,-c*c2))
+        view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
 
         if forward:
-            if position[1]<=1 and phi<0:
+            if position[1]<=4 and phi<0:
                 direction[1] = 0
             position += direction * 0.08
 
         elif backward:
-            if position[1]<=1 and phi>0:
+            if position[1]<=4 and phi>0:
                 direction[1] = 0
             position -= direction * 0.08
 
+    if roll.active:
+        shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2) @ roll.transform()
+    else:
+        shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
+
+    glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
     glUniform3f(shipPos_loc, *position)
-    shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
     floorNode.transform = tr.translate(6*(position[0]//6), 0, 6*(position[2]//6))
 
 @win.event
 def on_draw():
-    glClear(GL_COLOR_BUFFER_BIT)
-    glClear(GL_DEPTH_BUFFER_BIT)
-    glUseProgram(program.shaderProgram)
+    win.clear()
     scene.draw()
     if visible_path:
         animation.path3D.draw()
@@ -331,6 +356,8 @@ def on_key_press(symbol, mods):
         animation.start(position, direction)
     elif symbol == pyglet.window.key.V:
         visible_path = not visible_path
+    elif symbol == pyglet.window.key.P and not roll.active:
+        roll.active = True
     elif symbol == pyglet.window.key.ESCAPE:
         win.close()
 
