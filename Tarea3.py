@@ -7,6 +7,18 @@ from libs.easy_shaders import FogModelViewProjectionShaderProgram
 import libs.gpu_shape as gp
 from libs.basic_shapes import Shape
 
+input("""CONTROLES:
+WASD y ratón: movimiento de la nave
+R: Grabación de puntos de control
+V: Activar/desactivar visualización del recorrido
+1: Seguir recorrido
+P: DO A BARREL ROLL
+C: Cambio de camara
+
+Cuidado al añadir muchos puntos de control sin una tarjeta gráfica dedicada
+Presiona enter para comenzar...""")
+
+
 # OPENGL SETUP
 win = pyglet.window.Window()
 win.set_exclusive_mouse(True)
@@ -293,7 +305,7 @@ class SimplerNode:
         self.child.clear()
 
 donuts = []
-for i in range(3):
+for i in range(4):
     torusNode = Node()
     torusNode.children += [create_torus(2.5+rand()*2, 0.3+rand()*2, rand(1,3), rand(1,3))]
     torusNode.transform = tr.translate(40*rand()-20,20*rand()+6,40*rand()-20)@tr.rotationY(2*np.pi*(rand()))@tr.rotationX(np.pi*(0.5+0.5*randn()))
@@ -314,6 +326,7 @@ shadowNode.children += [shadow]
 
 scene = Node()
 scene.children += [shipNode, floorNode, shadowNode] + donuts
+
 
 # SET TRANSFORMS
 model_loc = glGetUniformLocation(program.shaderProgram, "model")
@@ -444,13 +457,5 @@ def on_close():
     scene.clear()
     animation.clear()
     glDeleteProgram(program.shaderProgram)
-
-print("""CONTROLES:
-WASD y ratón: movimiento de la nave
-R: Grabación de puntos de control
-V: Activar/desactivar visualización del recorrido
-1: Seguir recorrido
-P: DO A BARREL ROLL
-C: Cambio de camara""")
 
 pyglet.app.run()
