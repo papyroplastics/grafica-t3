@@ -167,24 +167,22 @@ class HermiteCurve:
         self.poss += [np.array(pos)]
         self.path3D.children.append(create_checkpoint(pos, dir))
 
+pyramid_vertices = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
+                    -0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
+                    -0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
+                        0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
+                        0.0, 0.0,-0.25, 0.4, 0.4, 0.8], dtype=np.float32)
+pyramid_indices = np.array([0,1,2, 0,2,3, 0,4,1, 1,4,2, 2,4,3, 3,4,0])
+pyramid_gpushape = gp.createGPUShape(program, Shape(pyramid_vertices, pyramid_indices))
 
 def create_checkpoint(pos, dir):
-    vertices = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
-                        -0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
-                        -0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
-                         0.1,-0.1, 0.1, 0.2, 0.2, 0.8,
-                         0.0, 0.0,-0.25, 0.4, 0.4, 0.8], dtype=np.float32)
-
-    indices = np.array([0,1,2, 0,2,3, 0,4,1, 1,4,2, 2,4,3, 3,4,0])
-    gpushape = gp.createGPUShape(program, Shape(vertices, indices))
-
     s2 = dir[1]
     c2 = np.sqrt(1-s2**2)
     s = -dir[0] / c2
     c = -dir[2] / c2
 
     node = Node()
-    node.children += [gpushape]
+    node.children += [pyramid_gpushape]
     node.transform = tr.translate(*pos) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
     return node
 
