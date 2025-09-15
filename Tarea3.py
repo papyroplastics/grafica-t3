@@ -44,8 +44,8 @@ ship = gp.createGPUShape(program, Shape(ship_vert, ship_ind))
 lines =  gp.createGPUShape(program, Shape(dark_vert, lines_ind))
 
 # CREAR SUELO
-length = 30
-count = 24
+length = 72
+count = 48
 box_len = 2 * length / count
 floor_vert = ()
 color = True
@@ -67,6 +67,18 @@ for i in range(count**2):
     floor_ind += (j, j+1, j+2, j+1, j+3, j+2)
 
 floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
+
+# HERMITE CURVE
+hermite_matrix = np.array([[ 2,-2, 1, 1],
+                           [-3, 3,-2,-1],
+                           [ 0, 0, 1, 0],
+                           [ 1, 0, 0, 0]])
+
+def hermite_point(t, pos1, pos2, dir1, dir2):
+    pos_matrix = np.vstack([pos1, dir1, pos2, dir2])
+    t_arr = np.array([t**3, t**2, t, 1], dtype=np.float32)
+    return t_arr @ hermite_matrix @ pos_matrix
+
 
 # SET TRANSFORMS
 view = tr.lookAt(np.array([0,2,3]), np.array([0,2,0]), np.array([0,1,3]))
@@ -114,6 +126,7 @@ rotate_left = False
 rotate_right = False
 forward = False
 backward = False
+in_anim = False
 position = np.array([0, 2, 0], dtype=np.float32)
 
 def updateScenegraph():
@@ -140,11 +153,12 @@ def updateScenegraph():
             direction[1] = 0
         position -= direction * 0.08
 
-
-
     glUniform3f(shipPos_loc, *position)
     shipNode.transform = tr.translate(*position) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
-    floorNode.transform = tr.translate(5*(position[0]//5), 0, 5*(position[2]//5))
+    floorNode.transform = tr.translate(6*(position[0]//6), 0, 6*(position[2]//6))
+
+def updateAnimation():
+    pass
 
 @win.event
 def on_draw():
@@ -157,7 +171,9 @@ def on_draw():
 @win.event
 def on_mouse_motion(x, y, dx, dy):
     global phi
-    if dy > 0.0 and phi < 0.785:
+    if in_anim:
+        pass
+    elif dy > 0.0 and phi < 0.785:
         phi += dy/600
     elif dy < 0.0 and phi > -0.785:
         phi += dy/600

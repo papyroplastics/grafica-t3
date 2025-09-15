@@ -530,7 +530,7 @@ class FogModelViewProjectionShaderProgram: # Shader de neblina
             out vec4 outColor;
             void main()
             {
-                float alpha = max(1 - 0.02 * (abs(shipPos.x - fragPos.x) + abs(shipPos.z - fragPos.z) + 0.1), 0);
+                float alpha = max(1 - 0.014 * max(abs(shipPos.x - fragPos.x), abs(shipPos.z - fragPos.z)), 0);
                 outColor = vec4(newColor, alpha);
             }
             """
