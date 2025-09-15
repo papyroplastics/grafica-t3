@@ -78,7 +78,6 @@ floor = gp.createGPUShape(program, Shape(floor_vert, floor_ind))
 cosines = [np.cos(2*np.pi*i/24) for i in range(24)]
 sines = [np.sin(2*np.pi*i/24) for i in range(24)]
 def create_torus(r1, r2, c1, c2):
-    print(r1, r2, c1, c2)
     vertices = []
     for i in range(24):
         c = 0.0
@@ -126,7 +125,7 @@ class HermiteCurve:
         self.start_dir = np.empty(3)
         self.next_pos = np.empty(3)
         self.active = False
-        self.path3D = Node()
+        self.path3D = tuple()
         self.hermite_matrix = np.array([[ 2,-2, 1, 1],
                                         [-3, 3,-2,-1],
                                         [ 0, 0, 1, 0],
@@ -207,16 +206,20 @@ class HermiteCurve:
                 self.dirs[-1][0] *= log
                 self.dirs[-2][1] *= log
                 for t in range(int(log)):
-                    self.path3D.children += [create_midpoint(self.hermite_point(t/int(log),self.poss[-1],self.dirs[-2][1],pos,self.dirs[-1][0]))]
+                    self.path3D += (create_midpoint(self.hermite_point(t/int(log),self.poss[-1],self.dirs[-2][1],pos,self.dirs[-1][0])),)
             elif norm > 0.5:
                 self.dirs += [[np.array(dir),np.array(dir)]]
             else:
                 return
         self.poss += [np.array(pos)]
-        self.path3D.children.append(create_checkpoint(pos, dir))
+        self.path3D += (create_checkpoint(pos, dir),)
 
     def clear(self):
-        self.path3D.clear()
+        for node in self.path3D:
+            node.clear()
+    def draw_3d_path(self):
+        for node in self.path3D:
+            node.draw()
 
 pyramid_vertices = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
                             -0.1, 0.1, 0.1, 0.2, 0.2, 0.8,
@@ -232,8 +235,8 @@ def create_checkpoint(pos, dir):
     s = -dir[0] / c2
     c = -dir[2] / c2
 
-    node = Node()
-    node.children += [pyramid_gpushape]
+    node = SimplerNode()
+    node.child= pyramid_gpushape
     node.transform = tr.translate(*pos) @ tr.trigRotationY(s,c) @ tr.trigRotationX(s2,c2)
     return node
 
@@ -254,8 +257,8 @@ sphrere_indices = np.hstack((sphrere_indices, inverted))
 sphrere_gpushape = gp.createGPUShape(program, Shape(sphere_vertices, sphrere_indices))
 
 def create_midpoint(pos):
-    node = Node()
-    node.children += [sphrere_gpushape]
+    node = SimplerNode()
+    node.child = sphrere_gpushape
     node.transform = tr.translate(*pos)
     return node
 
@@ -279,8 +282,18 @@ class Node:
         for child in self.children:
             child.clear()
 
+class SimplerNode:
+    def __init__(self):
+        self.transform = tr.identity()
+        self.child = None
+    def draw(self):
+        glUniformMatrix4fv(model_loc, 1, GL_TRUE, self.transform)
+        program.drawCall(self.child, GL_TRIANGLES)
+    def clear(self):
+        self.child.clear()
+
 donuts = []
-for i in range(5):
+for i in range(3):
     torusNode = Node()
     torusNode.children += [create_torus(2.5+rand()*2, 0.3+rand()*2, rand(1,3), rand(1,3))]
     torusNode.transform = tr.translate(40*rand()-20,20*rand()+6,40*rand()-20)@tr.rotationY(2*np.pi*(rand()))@tr.rotationX(np.pi*(0.5+0.5*randn()))
@@ -304,13 +317,10 @@ scene.children += [shipNode, floorNode, shadowNode] + donuts
 
 # SET TRANSFORMS
 model_loc = glGetUniformLocation(program.shaderProgram, "model")
-view_loc = glGetUniformLocation(program.shaderProgram, "view")
-proj_loc = glGetUniformLocation(program.shaderProgram, "projection")
+viewProj_loc = glGetUniformLocation(program.shaderProgram, "viewProj")
 shipPos_loc = glGetUniformLocation(program.shaderProgram, "shipPos")
 PERSPECTIVE = tr.perspective(60, win.aspect_ratio, 0.5, 100)
 ORTHOGRAPHIC = tr.ortho(-win.aspect_ratio*4, win.aspect_ratio*4, -4, 4, 0.1, 50)
-glUniformMatrix4fv(view_loc, 1, GL_TRUE, tr.lookAt(np.array([0,49,0]), np.array([0, 6, 0]), np.array([0,0,-1])))
-glUniformMatrix4fv(proj_loc, 1, GL_TRUE, PERSPECTIVE)
 
 # Programa :D
 theta = 0.0
@@ -367,10 +377,11 @@ def updateScenegraph():
 
     if third_person:
         view = tr.lookAt(position - tr.scale(4,0.8,4)[:3,:3] @ direction, position, np.array([0,1,0]))
+        glUniformMatrix4fv(viewProj_loc, 1, GL_TRUE, PERSPECTIVE @ view)
     else:
         view = tr.lookAt(position * np.array([1,0,1]) + np.array([0,49,0]), position, np.array([0,0,-1]))
+        glUniformMatrix4fv(viewProj_loc, 1, GL_TRUE, ORTHOGRAPHIC @ view)
 
-    glUniformMatrix4fv(view_loc, 1, GL_TRUE, view)
     glUniform3f(shipPos_loc, *position)
     floorNode.transform = tr.translate(6*(position[0]//6), 0, 6*(position[2]//6))
     shadowNode.transform = shadow_matrix @ shipNode.transform
@@ -380,7 +391,7 @@ def on_draw():
     win.clear()
     scene.draw()
     if visible_path:
-        animation.path3D.draw()
+        animation.draw_3d_path()
     updateScenegraph()
     
 @win.event
@@ -412,10 +423,6 @@ def on_key_press(symbol, mods):
     elif symbol == pyglet.window.key.P and not roll.active:
         roll.active = True
     elif symbol == pyglet.window.key.C:
-        if third_person:
-            glUniformMatrix4fv(proj_loc, 1, GL_TRUE, ORTHOGRAPHIC)
-        else:
-            glUniformMatrix4fv(proj_loc, 1, GL_TRUE, PERSPECTIVE)
         third_person = not third_person
     elif symbol == pyglet.window.key.ESCAPE:
         win.close()

@@ -503,8 +503,7 @@ class FogModelViewProjectionShaderProgram: # Shader de neblina
         vertex_shader = """
             #version 330
             
-            uniform mat4 projection;
-            uniform mat4 view;
+            uniform mat4 viewProj;
             uniform mat4 model;
 
             in vec3 position;
@@ -515,7 +514,7 @@ class FogModelViewProjectionShaderProgram: # Shader de neblina
             void main()
             {
                 fragPos = vec3(model * vec4(position, 1.0));
-                gl_Position = projection * view * vec4(fragPos, 1.0);
+                gl_Position = viewProj * vec4(fragPos, 1.0);
                 newColor = color;
             }
             """
